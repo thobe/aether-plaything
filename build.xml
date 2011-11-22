@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:aether="antlib:org.sonatype.aether.ant"
+	 name="aether-plaything" default="package">
+
+  <target name="clean"><delete dir="target"/></target>
+  <target name="clean lib"><delete dir="lib"/></target>
+  <target name="clean all" depends="clean,clean lib"/>
+
+  <condition property="aether.is.built">
+    <and>
+      <available file="lib" type="dir"/>
+      <resourcecount when="equal" count="2">
+	<fileset dir="lib" includes="aether-ant-tasks-*.jar"/>
+      </resourcecount>
+    </and>
+  </condition>
+
+  <target name="build aether" unless="aether.is.built">
+    <mkdir dir="lib"/>
+    <mkdir dir="target"/>
+    <get src="https://github.com/sonatype/aether-ant-tasks/zipball/master"
+	 dest="target/aether.zip" skipexisting="true"/>
+    <unzip src="target/aether.zip" dest="target"/>
+    <pathconvert property="aether.unpack.dir">
+      <dirset dir="target" includes="sonatype-aether-ant-tasks-*"/>
+    </pathconvert>
+    <exec executable="mvn" dir="${aether.unpack.dir}">
+      <arg value="clean"/>
+      <arg value="package"/>
+      <arg value="dependency:copy-dependencies"/>
+    </exec>
+    <move todir="lib">
+      <fileset dir="${aether.unpack.dir}/target">
+	<include name="*.jar"/>
+      </fileset>
+    </move>
+  </target>
+
+  <target name="setup aether" depends="build aether">
+    <taskdef uri="antlib:org.sonatype.aether.ant"
+	     resource="org/sonatype/aether/ant/antlib.xml">
+      <classpath>
+	<fileset dir="lib" includes="aether-ant-tasks-*.jar"/>
+      </classpath>
+    </taskdef>
+
+    <aether:pom file="pom.xml" id="pom"/>
+  </target>
+
+  <target name="dependencies" depends="setup aether">
+    <mkdir dir="target/dependency"/>
+    <aether:resolve>
+      <aether:dependencies pomRef="pom"/>
+      <aether:path refid="cp.compile" classpath="compile"/>
+      <aether:path refid="cp.test" classpath="test"/>
+    </aether:resolve>
+  </target>
+
+  <target name="compile" depends="dependencies">
+    <mkdir dir="target"/>
+    <mkdir dir="target/classes"/>
+    <javac srcdir="src/main/java" destdir="target/classes"
+	   source="1.6" target="1.6" classpathref="cp.compile"
+	   includeantruntime="false"/>
+  </target>
+
+  <target name="compile test" unless="skipTests">
+    <mkdir dir="target"/>
+    <mkdir dir="target/test-classes"/>
+    <javac srcdir="src/test/java" destdir="target/test-classes"
+	   source="1.6" target="1.6" includeantruntime="false">
+      <classpath>
+	<path refid="cp.test"/>
+	<pathelement location="target/classes"/>
+      </classpath>
+    </javac>
+  </target>
+
+  <target name="jar" depends="compile">
+   <jar destfile="target/${pom.artifactId}-${pom.version}.jar"
+	basedir="target/classes"/>
+  </target>
+
+  <target name="test-jar" depends="compile test">
+   <jar destfile="target/${pom.artifactId}-${pom.version}-tests.jar"
+	basedir="target/test-classes"/>
+  </target>
+
+  <target name="test" unless="skipTests" depends="jar,test-jar">
+    <mkdir dir="target/reports"/>
+    <junit printsummary="yes" haltonfailure="on">
+      <classpath>
+	<path refid="cp.test"/>
+	<pathelement location="target/${pom.artifactId}-${pom.version}.jar"/>
+	<pathelement location="target/${pom.artifactId}-${pom.version}-tests.jar"/>
+      </classpath>
+      <batchtest fork="yes" todir="target/reports">
+	<fileset dir="src/test/java">
+	  <include name="**/*Test.java"/>
+	  <include name="**/Test*.java"/>
+	</fileset>
+      </batchtest>
+    </junit>
+  </target>
+
+  <target name="package" depends="compile,test"/>
+</project>
